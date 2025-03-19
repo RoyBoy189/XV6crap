@@ -22,6 +22,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int check_superpages(void *addr, int size);
 
 // ulib.c
 int stat(const char*, struct stat*);

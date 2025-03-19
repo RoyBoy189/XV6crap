@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "kalloc.h"
 
 struct cpu cpus[NCPU];
 
@@ -188,7 +189,7 @@ proc_pagetable(struct proc *p)
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
   if(mappages(pagetable, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
+              (uint64)trampoline, PTE_R | PTE_X, PGSIZE) < 0){
     uvmfree(pagetable, 0);
     return 0;
   }
@@ -196,7 +197,7 @@ proc_pagetable(struct proc *p)
   // map the trapframe page just below the trampoline page, for
   // trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
+              (uint64)(p->trapframe), PTE_R | PTE_W, PGSIZE) < 0){
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
     uvmfree(pagetable, 0);
     return 0;
@@ -204,7 +205,6 @@ proc_pagetable(struct proc *p)
 
   return pagetable;
 }
-
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
@@ -259,18 +259,26 @@ userinit(void)
 int
 growproc(int n)
 {
-  uint64 sz;
   struct proc *p = myproc();
+  uint oldsz = p->sz;
+  uint new_sz = oldsz + n;
 
-  sz = p->sz;
-  if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+  printf("growproc: oldsz = %d, new_sz = %d, n = %d\n", oldsz, new_sz, n);
+
+  if (n > 0) {
+    if (uvmalloc(p->pagetable, oldsz, new_sz, PTE_W | PTE_X | PTE_R | PTE_U) == 0) {
+      printf("uvmalloc failed\n");
       return -1;
     }
-  } else if(n < 0){
-    sz = uvmdealloc(p->pagetable, sz, sz + n);
+  } else if (n < 0) {
+    if (uvmdealloc(p->pagetable, oldsz, new_sz) == 0) {
+      printf("uvmdealloc failed\n");
+      return -1;
+    }
   }
-  p->sz = sz;
+
+  p->sz = new_sz;
+  switchuvm(p);
   return 0;
 }
 
@@ -692,4 +700,19 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void
+switchuvm(struct proc *p)
+{
+  if(p == 0)
+    panic("switchuvm: no process");
+  if(p->kstack == 0)
+    panic("switchuvm: no kstack");
+  if(p->pagetable == 0)
+    panic("switchuvm: no pagetable");
+
+  sfence_vma();
+  w_satp(MAKE_SATP(p->pagetable));
+  sfence_vma();
 }

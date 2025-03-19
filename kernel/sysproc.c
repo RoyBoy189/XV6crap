@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "superpages.h"
 
 uint64
 sys_exit(void)
@@ -38,14 +39,19 @@ sys_wait(void)
 uint64
 sys_sbrk(void)
 {
-  uint64 addr;
-  int n;
+  uint64 addr = myproc()->sz;
+  int n = 0;
+  int superpage_size = 2 * 1024 * 1024; // 2MB
 
   argint(0, &n);
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
-  return addr;
+
+  // Calculate the number of superpages needed
+  int num_superpages = (n + superpage_size - 1) / superpage_size;
+
+  // Calculate the total size to allocate in bytes
+  int total_size = num_superpages * superpage_size;
+
+  return (growproc(total_size) < 0) ? -1 : addr; // Avoid early returns
 }
 
 uint64
@@ -91,3 +97,4 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+

@@ -80,3 +80,92 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+void *
+kalloc_superpage(void)
+{
+  char *mem = kalloc();
+  if (mem == 0)
+    return 0;
+
+  // Allocate additional pages to form a 2MB superpage
+  for (int i = 1; i < (2 * 1024 * 1024) / PGSIZE; i++) {
+    char *page = kalloc();
+    if (page == 0) {
+      // Free already allocated pages if allocation fails
+      for (int j = 0; j < i; j++) {
+        kfree(mem + j * PGSIZE);
+      }
+      return 0;
+    }
+    // Ensure contiguous allocation
+    if (page != mem + i * PGSIZE) {
+      // Free already allocated pages if not contiguous
+      for (int j = 0; j <= i; j++) {
+        kfree(mem + j * PGSIZE);
+      }
+      return 0;
+    }
+  }
+  return mem;
+}
+
+
+void *superalloc(void) {
+  // Request a contiguous 2MB block from kalloc
+  void *mem = kalloc_superpage();
+  if (mem == 0)
+      return 0;
+
+  // Zero out the entire 2MB region
+  memset(mem, 0, 2 * 1024 * 1024);
+
+  return mem;
+}
+
+void superfree(void *mem) {
+  if ((uint64)mem % (2 * 1024 * 1024) != 0) {
+      panic("superfree: unaligned superpage");
+  }
+  kfree(mem);
+}
+
+void *
+kalloc_size(int size)
+{
+  if (size == PGSIZE) {
+    return kalloc();
+  } else if (size == 2 * 1024 * 1024) {
+    return kalloc_superpage();
+  } else {
+    panic("kalloc_size: unsupported size");
+    return 0;
+  }
+}
+
+void
+kfree_superpage(void *mem)
+{
+  // Ensure the memory is aligned to 2MB
+  if ((uint64)mem % (2 * 1024 * 1024) != 0)
+    panic("kfree_superpage: not aligned");
+
+  // Free each 4KB page within the 2MB superpage
+  for (int i = 0; i < (2 * 1024 * 1024) / PGSIZE; i++) {
+    kfree((char*)mem + i * PGSIZE);
+  }
+}
+
+
+void
+kfree_size(void *mem, int size)
+{
+  if (size == PGSIZE) {
+    kfree(mem);
+  } else if (size == 2 * 1024 * 1024) {
+    kfree_superpage(mem);
+  } else {
+    panic("kfree_size: unsupported size");
+  }
+}
+

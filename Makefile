@@ -194,6 +194,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_pgtbltest\
 
 
 
@@ -246,8 +247,18 @@ endif
 
 ifeq ($(LAB),pgtbl)
 UPROGS += \
-	$U/_pgtbltest
+    $U/_pgtbltest
 endif
+
+$U/_pgtbltest: $U/pgtbltest.o $(ULIB)
+	# pgtbltest has less library code linked in - needs to be small
+	# in order to be able to max out the proc table.
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_pgtbltest $U/pgtbltest.o $(ULIB)
+	$(OBJDUMP) -S $U/_pgtbltest > $U/pgtbltest.asm
+
+$U/pgtbltest.o : $U/pgtbltest.c
+	$(CC) $(CFLAGS) -c -o $U/pgtbltest.o $U/pgtbltest.c
+
 
 ifeq ($(LAB),lock)
 UPROGS += \
